@@ -38,8 +38,11 @@ ezstore/
 ├── scripts/
 │   └── seed-test-data.sql      # Idempotent test dataset (TRUNCATE + INSERT)
 ├── .env.example                # GEMINI_API_KEY and agent settings (copy to .env)
-├── agent/                      # ★ LAB deliverable — not in this branch. Build it from agent-spec-prompt.md
-│                               #   (agents-cli scaffold → ADK 2.x graph Workflow → connect to mcp_server)
+├── agent/                      # ★ LAB deliverable: ADK 2.x graph Workflow agent (see agent/README.md)
+│   ├── Dockerfile
+│   ├── pyproject.toml           # google-adk[mcp,a2a]>=2.10,<3 (+ uv.lock)
+│   ├── quotation_agent/         # agent.py (Workflow graph), prompts.py, fast_api_app.py
+│   └── tests/                   # unit/, integration/, eval/ (agents-cli eval datasets + metrics)
 ├── mcp_server/
 │   ├── Dockerfile
 │   ├── pyproject.toml           # mcp>=2.2, httpx (+ uv.lock)
@@ -168,6 +171,7 @@ docker compose exec db psql -U ezstore -f /scripts/seed-test-data.sql
 | Backend API | http://localhost:8080/api/v1 |
 | Swagger UI | http://localhost:8080/swagger/index.html |
 | Health Check | http://localhost:8080/health |
+| AI Agent Chat | http://localhost:3000/agent |
 
 **Run E2E tests (verify the deployment is working):**
 
@@ -254,9 +258,9 @@ profit_rate  = profit ÷ total_price
 
 ### AI Agent
 
-> **This branch (`workshop-start`) is the lab starting point.** The backend, frontend Chat UI, MCP Server and database are provided; the `agent/` service is what you build by feeding `agent-spec-prompt.md` to your AI coding tool. The description below is the target you are building toward.
+> **This branch (`feature/ezstore-agent-develop`) contains the implemented `agent/` service**, built from `agent-spec-prompt.md` on top of the `workshop-start` lab starting point. Design notes, how to add an operation, and the eval details are in [agent/README.md](agent/README.md).
 
-EZStore includes a natural-language quotation assistant built with Google ADK 2.x. The agent is a **graph Workflow**: only one node calls the LLM (intent classification); tool selection, argument passing, clarification and refusal are all deterministic program logic.
+EZStore includes a natural-language quotation assistant built with Google ADK 2.x. The agent is a **graph Workflow**: only one node calls the LLM (intent classification). Tool selection, argument passing, clarification and refusal are all deterministic program logic.
 
 **Architecture:**
 
@@ -271,12 +275,13 @@ Workflow graph (agent/quotation_agent/agent.py):
   START → load_context → classify_intent (LLM, output_schema=Intent) → route
             ├─ get_quotation / list_customer_quotations / duplicate_quotation
             ├─ update_pricing_factor / adjust_total_price / convert_to_order    ← each calls one MCP tool
-            ├─ clarify     (missing fields → ask, keep state.pending_intent)
-            └─ off_topic   (fixed refusal, decided by code)
-          all → respond    (emit text + update state.chat_history)
+            ├─ clarify      (missing fields → ask, keep state.pending_intent)
+            ├─ off_topic    (fixed refusal, decided by code)
+            └─ model_error  (no credentials / quota / outage → clear message)
+          all → respond     (the only node the Chat UI displays; updates state)
 ```
 
-Every user message re-runs the graph from `START`; cross-turn memory lives in session state (`chat_history`, `pending_intent`), so a user can answer a clarification question in the next message.
+Every user message re-runs the graph from `START`. Cross-turn memory lives in session state (`chat_history`, `pending_intent`), so a user can answer a clarification question in the next message.
 
 **Capabilities:**
 
@@ -290,31 +295,58 @@ Every user message re-runs the graph from `START`; cross-turn memory lives in se
 | Convert to order | Create an order from the quotation's customer and items, linked via `quotation_id`; the quotation itself is untouched |
 
 **Key design:**
-- All modifications use **copy-on-write** — the original quotation is never changed
-- All responses include **plain-text system links** to the quotation/order detail pages
-- Off-topic requests are **refused by code**, missing fields trigger a **clarification turn**
-- Agent runs even without an API key (chat returns a clear error), so `docker compose up` never fails on a missing key
+- **Copy-on-write:** all modifications work on a copy. The original quotation is never changed, and the reply says so.
+- **Plain-text links:** all responses include system links to the quotation/order detail pages as plain text. The `respond` node also rewrites any Markdown link to plain text.
+- **Arguments from code:** quotation numbers and amounts are extracted by regex from the message, overriding the LLM's values.
+- **Refusals by code:** off-topic requests and customer/product create/update/delete are refused by code, not just by the prompt. Missing fields trigger a clarification turn.
+- **Runs without a key:** the agent starts without an API key (chat returns a clear error), so `docker compose up` never fails on a missing key.
 
-**Local development:**
+**Environment variables** (Docker Compose reads the root `.env`; local runs read `agent/.env`):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `GEMINI_API_KEY` | — | Google AI Studio API key (option A) |
+| `GOOGLE_GENAI_USE_VERTEXAI`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` | —, —, `global` | Vertex AI instead of an API key (option B). `GOOGLE_CLOUD_PROJECT` is also used by `agents-cli eval`. |
+| `AGENT_MODEL` | `gemini-3.8-flash` | Model for the intent classifier |
+| `JUDGE_MODEL` | `AGENT_MODEL` | Model for the two eval LLM judges (`agent/.env` only) |
+| `MCP_URL` | `http://localhost:8010/mcp` | MCP server URL. Compose sets `http://mcp-server:8000/mcp`. |
+| `ALLOW_ORIGINS` | `http://localhost:3000` | CORS origins for the agent API |
+| `FRONTEND_URL`, `MCP_HOST_PORT` | `http://localhost:3000`, `8010` | MCP server: base URL of the links in replies; host port it is published on |
+
+**Local development** (the agent on your machine, the other services in Docker):
 
 ```bash
-# MCP Server (port 8010 to avoid clashing with other local services)
-cd mcp_server && uv sync
-BACKEND_URL=http://localhost:8080 MCP_PORT=8010 uv run python server.py
+docker compose up -d db backend mcp-server        # mcp-server is published on localhost:8010
+docker compose exec db psql -U ezstore -f /scripts/seed-test-data.sql
 
-# Agent (in another terminal)
-cd agent && cp .env.example .env    # fill GEMINI_API_KEY, set MCP_URL=http://localhost:8010/mcp
+cd agent && cp .env.example .env    # fill GEMINI_API_KEY; MCP_URL=http://localhost:8010/mcp
                                     # or Vertex AI: GOOGLE_GENAI_USE_VERTEXAI=true + GOOGLE_CLOUD_PROJECT after `gcloud auth application-default login`
-uv sync --group dev
-agents-cli playground               # web UI
+uv sync --group dev --extra eval
+agents-cli playground --port 8501   # web UI on http://localhost:8501 (the default port 8080 is taken by the backend)
 agents-cli run "我要查詢報價單，報價單編號：QT-20260330-001"
-
-# Tests
-uv run pytest tests/unit -q                       # no LLM, no MCP
-MCP_URL=http://localhost:8010/mcp uv run pytest tests/integration -q   # offline graph tests (+ LLM tests when key is set)
-agents-cli eval run --dataset tests/eval/datasets/quotation-actions.json    # 6 action cases (creates data; reseed before rerun)
-agents-cli eval run --dataset tests/eval/datasets/quotation-guardrails.json # 2 refusals + 1 multi-turn clarification
 ```
+
+The playground can also be started directly with `uv run adk web . --host 127.0.0.1 --port 8501 --allow_origins '*' --reload_agents`.
+
+**Tests and eval:**
+
+```bash
+uv run pytest tests/unit -q                       # routing rules: no LLM, no MCP
+uv run pytest tests/integration -q                # whole graph with a fake classifier + real MCP; no model calls
+RUN_LLM_TESTS=1 uv run pytest tests/integration -q   # also calls the real model
+
+gcloud auth application-default login             # once: agents-cli's grader needs gcloud credentials (no billing)
+agents-cli eval run --dataset tests/eval/datasets/quotation-guardrails.json --qps 0.2 # 2 refusals + 1 multi-turn clarification
+docker compose exec db psql -U ezstore -f /scripts/seed-test-data.sql                # the action cases create data
+agents-cli eval run --dataset tests/eval/datasets/quotation-actions.json --qps 0.2    # 6 action cases
+python3 ../scripts/eval_summary.py artifacts/grade_results/results_<timestamp>.json   # cases × metrics table
+```
+
+Notes on the eval:
+- **Rate limit:** `--qps 0.2` keeps the judge calls under the free tier's 15 requests/minute.
+- **Judge quota:** set `JUDGE_MODEL` to another model so judging doesn't use the agent model's daily quota (20 requests/day per model on the free tier).
+- **`refusal_or_action` runs locally.** It is judged on your API key, not by the Vertex AI eval service, because that service returns 403 on a GCP project without billing. Its rules are still the `prompt_template` in `agent/tests/eval/eval_config.yaml`, so editing it as `eval-lab.md` describes still works. Details in [agent/README.md](agent/README.md).
+- **Self-grading:** `python3 scripts/grading/grade_agent.py --suite scripts/grading/student-suite.json` (see [scripts/grading/README.md](scripts/grading/README.md)) uses its own config, where `refusal_or_action` is Vertex-only. It needs billing to score that component.
 
 Trustworthiness evaluation labs for learners: [eval-lab-quick.md](eval-lab-quick.md) (25 min, in class) and [eval-lab.md](eval-lab.md) (60–90 min, full version).
 
@@ -373,6 +405,7 @@ HTTP Request → Handler (Gin) → Service (business logic) → Repository (GORM
 | Agent prompts / fixed replies | `agent/quotation_agent/prompts.py` |
 | Agent FastAPI app | `agent/quotation_agent/fast_api_app.py` |
 | Agent eval | `agent/tests/eval/eval_config.yaml`, `agent/tests/eval/datasets/*.json` |
+| Agent eval judges | `agent/tests/eval/response_quality.py`, `agent/tests/eval/refusal_judge.py` (local, `JUDGE_MODEL`) |
 | MCP Server (6 tools, mcp 2.x `MCPServer`) | `mcp_server/server.py` |
 | Agent Chat UI | `frontend/src/pages/AgentChatPage.tsx` |
 | Agent API client | `frontend/src/api/agentApi.ts` |
@@ -498,13 +531,13 @@ bun run build                             # production build → dist/
 cd mcp_server
 uv sync && BACKEND_URL=http://localhost:8080 MCP_PORT=8010 uv run python server.py
 
-# Agent (reads agent/.env: GEMINI_API_KEY, MCP_URL, AGENT_MODEL)
+# Agent (reads agent/.env: GEMINI_API_KEY, MCP_URL, AGENT_MODEL, JUDGE_MODEL)
 cd agent
-uv sync --group dev
-agents-cli playground                     # local web UI
+uv sync --group dev --extra eval
+agents-cli playground --port 8501         # local web UI (default port 8080 is taken by the backend)
 agents-cli run "我要查詢報價單，報價單編號：QT-20260330-001"
 uv run pytest tests/unit tests/integration -q
-agents-cli eval run                       # LLM-judged eval over tests/eval/datasets
+agents-cli eval run --dataset tests/eval/datasets/quotation-guardrails.json --qps 0.2   # LLM-judged eval
 ```
 
 ### Common Modification Scenarios
