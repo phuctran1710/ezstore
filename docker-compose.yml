@@ -47,6 +47,23 @@ services:
       backend:
         condition: service_started
 
+  agent:
+    image: ghcr.io/cshliu77/ezstore/agent:latest
+    pull_policy: always
+    environment:
+      # 模型憑證二選一（見 .env.example）；沒設定時服務照常啟動，對話會回傳清楚的錯誤訊息
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
+      AGENT_MODEL: ${AGENT_MODEL:-gemini-3.8-flash}
+      MCP_URL: http://mcp-server:8000/mcp
+      ALLOW_ORIGINS: ${ALLOW_ORIGINS:-http://localhost:3000}
+    # 只在 Compose 內部網路開放 8080，由 frontend 的 nginx /agent-api/ 轉發
+    expose:
+      - "8080"
+    depends_on:
+      - mcp-server
 
   frontend:
     image: ghcr.io/cshliu77/ezstore/frontend:latest
@@ -56,6 +73,7 @@ services:
     depends_on:
       - backend
       - mcp-server
+      - agent
 
   e2e:
     image: ghcr.io/cshliu77/ezstore/e2e:latest
