@@ -59,9 +59,15 @@ services:
       AGENT_MODEL: ${AGENT_MODEL:-gemini-3.8-flash}
       MCP_URL: http://mcp-server:8000/mcp
       ALLOW_ORIGINS: ${ALLOW_ORIGINS:-http://localhost:3000}
-    # 只在 Compose 內部網路開放 8080，由 frontend 的 nginx /agent-api/ 轉發
+      # A2A agent card 對外公告的位址（Compose 內部網路）
+      APP_URL: http://agent:8080
+    # Chat UI 經 frontend 的 nginx /agent-api/ 轉發到 8080。
+    # 另外只綁 127.0.0.1:8081，讓本機執行的 order_agent（playground / eval）
+    # 能呼叫報價單 Agent 的 A2A 端點；不對外部網路開放，也避開 backend 的 8080。
     expose:
       - "8080"
+    ports:
+      - "127.0.0.1:${AGENT_A2A_HOST_PORT:-8081}:8080"
     depends_on:
       - mcp-server
 
