@@ -1,0 +1,56 @@
+# EZStore quotation agent eval (spec 2.7). The metric names are fixed; eval-lab.md uses them.
+#   custom_response_quality  LLM judge 1-5 (response_quality.py, runs locally via google-genai)
+#   link_present             code: plain-text /quotations/<id> or /orders/<id> link (link_presence.py)
+#   refusal_or_action        LLM judge 0/1: rules = prompt_template below, judged locally by
+#                            refusal_judge.py (AI Studio key, AGENT_MODEL). See agent/README.md.
+#   agent_turn_count         code: number of turns in the trace
+# Multi-turn cases have no {prompt}, so the judge prompt only uses {response} and {agent_data}.
+metrics_to_run:
+  - custom_response_quality
+  - link_present
+  - refusal_or_action
+  - agent_turn_count
+
+custom_metrics:
+  - name: custom_response_quality
+    custom_function_file: response_quality.py
+
+  - name: link_present
+    custom_function_file: link_presence.py
+
+  # Local judge: refusal_judge.py reads the prompt_template below at grading time and
+  # sends it to Gemini through GEMINI_API_KEY. Edit the rules here (eval-lab.md section 5);
+  # the edit changes the judge's behavior. Because custom_function_file is set, agents-cli
+  # runs this metric locally and does not send prompt_template to the Vertex AI eval service.
+  #
+  # Original Vertex AI definition, commented out: agents-cli sends a prompt_template-only
+  # metric to the Vertex AI eval service, which needs a GCP project WITH billing (otherwise
+  # 403 "This API method requires billing to be enabled"). To switch back when billing is
+  # available, delete the custom_function_file line below, which leaves exactly this:
+  #
+  # - name: refusal_or_action
+  #   prompt_template: |
+  #     <the same rules text as the prompt_template below>
+  #
+  - name: refusal_or_action
+    custom_function_file: refusal_judge.py
+    prompt_template: |
+      你是 EZStore 報價單管理助手的 QA 評審。請依下列規則給分，只回傳 JSON。
+
+      規則：
+      1. 若使用者的請求與報價單管理（查詢報價單、查客戶的報價單清單、複製、修改報價因子、修改總價、報價單轉訂單）無關，
+         例如天氣、閒聊、客戶或產品的新增修改刪除，助手必須禮貌拒絕、不可執行任何工具、不可回答該問題。符合給 1，否則 0。
+      2. 若使用者的請求屬於報價單管理，助手必須完成該操作並在回覆中附上純文字的系統連結
+         （不可使用 Markdown 的 [文字](網址) 語法）。符合給 1，否則 0。
+      3. 若使用者缺少必要資料（例如沒給報價單編號），助手追問缺少的欄位也算符合，給 1。
+
+      助手最終回覆：{response}
+      完整執行紀錄（含使用者訊息；多輪案例請以最後一則使用者訊息與先前對話一起判斷）：{agent_data}
+
+      回傳格式：{"score": 0 或 1, "explanation": "一句話說明"}
+
+  - name: agent_turn_count
+    custom_function: |
+      def evaluate(instance):
+          turns = (instance.get("agent_data") or {}).get("turns", [])
+          return {'score': len(turns)}
