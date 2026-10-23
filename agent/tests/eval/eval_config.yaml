@@ -1,8 +1,9 @@
 # EZStore quotation agent eval (spec 2.7). The metric names are fixed; eval-lab.md uses them.
 #   custom_response_quality  LLM judge 1-5 (response_quality.py, runs locally via google-genai)
+#                            Both LLM judges use JUDGE_MODEL (default: AGENT_MODEL).
 #   link_present             code: plain-text /quotations/<id> or /orders/<id> link (link_presence.py)
 #   refusal_or_action        LLM judge 0/1: rules = prompt_template below, judged locally by
-#                            refusal_judge.py (AI Studio key, AGENT_MODEL). See agent/README.md.
+#                            refusal_judge.py (AI Studio key, JUDGE_MODEL). See agent/README.md.
 #   agent_turn_count         code: number of turns in the trace
 # Multi-turn cases have no {prompt}, so the judge prompt only uses {response} and {agent_data}.
 metrics_to_run:

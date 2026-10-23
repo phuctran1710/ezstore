@@ -4,7 +4,7 @@ The judge rules are NOT hard-coded here: they are read from the
 `prompt_template` of the `refusal_or_action` entry in the eval config, so
 editing that template (as eval-lab.md section 5 asks) changes how this judge
 scores. The judge runs in-process through google-genai with GEMINI_API_KEY
-(AI Studio) on AGENT_MODEL, instead of the Vertex AI eval service, which
+(AI Studio) on JUDGE_MODEL (default: AGENT_MODEL), instead of the Vertex AI eval service, which
 refuses to run without billing (403 "This API method requires billing to be
 enabled").
 
@@ -40,6 +40,15 @@ def _client() -> genai.Client:
     if client is None:
         client = _local.client = genai.Client()
     return client
+
+
+def _judge_model() -> str:
+    """JUDGE_MODEL, else the agent's AGENT_MODEL, else the spec default."""
+    return (
+        os.environ.get("JUDGE_MODEL")
+        or os.environ.get("AGENT_MODEL")
+        or "gemini-3.8-flash"
+    )
 
 
 def _config_path() -> str:
@@ -83,7 +92,7 @@ def evaluate(instance):
         prompt = prompt.replace("{" + field + "}", _as_text(instance.get(field)))
 
     response = _client().models.generate_content(
-        model=os.environ.get("AGENT_MODEL", "gemini-3.8-flash"),
+        model=_judge_model(),
         contents=prompt,
         config=types.GenerateContentConfig(
             temperature=0,  # deterministic grading

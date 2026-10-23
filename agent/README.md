@@ -99,7 +99,7 @@ See the [A2A Inspector docs](https://github.com/a2aproject/a2a-inspector) for de
 - **Problem:** that service only runs on a GCP project **with billing enabled**. On a project without billing it fails with
   `403 PERMISSION_DENIED … This API method requires billing to be enabled`.
   With the placeholder `GOOGLE_CLOUD_PROJECT=local-only` it fails with `403 … SERVICE_DISABLED`. agents-cli 1.9.0 and 1.10.0 behave the same.
-- **What we do instead:** the entry also has `custom_function_file: refusal_judge.py`. agents-cli then runs the metric in-process, and `refusal_judge.py` sends the judge prompt to Gemini through `GEMINI_API_KEY` (AI Studio) on `AGENT_MODEL`. It returns the same 0/1 score.
+- **What we do instead:** the entry also has `custom_function_file: refusal_judge.py`. agents-cli then runs the metric in-process, and `refusal_judge.py` sends the judge prompt to Gemini through `GEMINI_API_KEY` (AI Studio) on `JUDGE_MODEL` (see below). It returns the same 0/1 score.
 - **The rules still live in the `prompt_template`.** `refusal_judge.py` hard-codes no rules. At grading time it reads the `prompt_template` of `refusal_or_action` from the config (the `--config` file, else `tests/eval/eval_config.yaml`) and fills in `{response}` and `{agent_data}`. Editing the template, as `eval-lab.md` section 5 asks, changes the judge's behavior. This was verified: inverting rule 1 turned the `off_topic_weather` score from 1 to 0, and restoring it brought back 1.
 - **Switching back to Vertex AI** once a project has billing: delete the `custom_function_file: refusal_judge.py` line. The commented-out original definition in `eval_config.yaml` shows the result.
 
@@ -107,4 +107,17 @@ Remaining requirements and limits:
 
 - **gcloud credentials are still required.** agents-cli's grader creates a Google Cloud Storage client even when every metric runs locally, so run `gcloud auth application-default login` once. No billing is needed.
 - **`scripts/grading` is unchanged.** Its own `eval_config.yaml` still defines `refusal_or_action` as a Vertex-only `prompt_template`, so on a project without billing `grade_agent.py` cannot score that component.
-- **Judge calls use your model quota.** Both LLM judges call `AGENT_MODEL`, so each graded case costs one call per judge on top of the agent's own call.
+- **Judge calls use your model quota.** Each graded case costs one call per LLM judge on top of the agent's own call. Point the judges at a different model with `JUDGE_MODEL` (below) to keep them off the agent model's quota.
+
+### `JUDGE_MODEL`: model for the eval judges
+
+Both LLM judges, `custom_response_quality` (`response_quality.py`) and `refusal_or_action` (`refusal_judge.py`), call the model named in `JUDGE_MODEL`. If it's unset they use `AGENT_MODEL`, and if that's unset too, `gemini-3.8-flash`. Set it in `agent/.env`; agents-cli loads that file when it grades.
+
+```
+AGENT_MODEL=gemini-3.8-flash         # the agent under test (spec 2.6)
+JUDGE_MODEL=gemini-3.5-flash-lite    # the two eval judges
+```
+
+The spec only fixes the agent's model. A separate judge model keeps grading off the agent model's quota. On the AI Studio free tier (20 requests/day per model), a full `agents-cli eval run` over both datasets costs 9 agent calls plus 18 judge calls. With `JUDGE_MODEL` on another model, only the 9 agent calls count against `gemini-3.8-flash`.
+
+`scripts/grading` has its own judge (`scripts/grading/response_quality.py`) that reads `AGENT_MODEL`, not `JUDGE_MODEL`. `grade_agent.py` therefore still spends agent-model quota on judging.

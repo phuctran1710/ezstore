@@ -31,6 +31,15 @@ def _client() -> genai.Client:
     return client
 
 
+def _judge_model() -> str:
+    """JUDGE_MODEL, else the agent's AGENT_MODEL, else the spec default."""
+    return (
+        os.environ.get("JUDGE_MODEL")
+        or os.environ.get("AGENT_MODEL")
+        or "gemini-3.8-flash"
+    )
+
+
 def _user_prompt(instance) -> str:
     """The prompt, or the last user message for multi-turn cases (no prompt)."""
     prompt = instance.get("prompt")
@@ -66,8 +75,7 @@ def evaluate(instance):
     prompt += f"Full Agent Trace: {instance.get('agent_data', '')}\n"
 
     response = _client().models.generate_content(
-        # Same model as the agent (AGENT_MODEL), like scripts/grading does.
-        model=os.environ.get("AGENT_MODEL", "gemini-3.8-flash"),
+        model=_judge_model(),
         contents=prompt,
         config=types.GenerateContentConfig(
             temperature=0,  # deterministic grading
