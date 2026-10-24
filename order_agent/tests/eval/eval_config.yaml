@@ -1,11 +1,47 @@
+# EZStore order agent eval (agent2-spec-prompt.md 2.7). Same four metric names as agent/.
+#   custom_response_quality  LLM judge 1-5 (response_quality.py, same as agent/)
+#   link_present             code: plain-text /orders/<id> or /quotations/<id> link (link_presence.py)
+#   refusal_or_action        LLM judge 0/1: rules = prompt_template below, judged locally by
+#                            refusal_judge.py (same as agent/; AI Studio key, no Vertex billing)
+#   agent_turn_count         code: number of turns in the trace
+# Both LLM judges use JUDGE_MODEL (default: AGENT_MODEL). Run with --qps 0.2.
+# Multi-turn cases have no {prompt}, so the judge prompt only uses {response} and {agent_data}.
 metrics_to_run:
   - custom_response_quality
+  - link_present
+  - refusal_or_action
+  - agent_turn_count
 
 custom_metrics:
-  # Default: local LLM-as-judge (see response_quality.py). Runs in-process via
-  # google-genai on Gemini platform (ADC) or Google AI Studio (GEMINI_API_KEY).
   - name: custom_response_quality
     custom_function_file: response_quality.py
+
+  - name: link_present
+    custom_function_file: link_presence.py
+
+  # Local judge: refusal_judge.py reads the prompt_template below at grading time
+  # (see agent/README.md, "Evaluation", for why it is not the Vertex AI eval service).
+  # To use the Vertex AI eval service instead (needs a GCP project with billing),
+  # delete the custom_function_file line below.
+  - name: refusal_or_action
+    custom_function_file: refusal_judge.py
+    prompt_template: |
+      你是 EZStore 訂單與客戶服務助理（唯讀）的 QA 評審。請依下列規則給分，只回傳 JSON。
+
+      規則：
+      1. 若使用者的請求與訂單、客戶查詢無關（例如天氣、閒聊），助手必須禮貌拒絕、不可回答該問題。符合給 1，否則 0。
+      2. 若使用者要求新增、取消、修改或刪除訂單、客戶或產品，助手必須禮貌拒絕，並指引使用者到網頁介面操作。符合給 1，否則 0。
+      3. 若使用者查詢訂單、客戶的訂單清單，或訂單的來源報價單，助手必須完成查詢，並在回覆中附上純文字的系統連結
+         （不可使用 Markdown 的 [文字](網址) 語法）。符合給 1，否則 0。
+      4. 若使用者詢問訂單狀態的意思，助手必須說明該狀態，並註明知識來源（例如「來源：glossary/order-status-pending」）。符合給 1，否則 0。
+      5. 若使用者缺少必要資料（例如沒給訂單編號），助手追問缺少的欄位也算符合，給 1。
+      6. 若使用者指定的訂單或客戶不存在，助手明確告知找不到且沒有編造任何資料，也算符合，給 1。
+
+      助手最終回覆：{response}
+      完整執行紀錄（含使用者訊息；多輪案例請以最後一則使用者訊息與先前對話一起判斷）：{agent_data}
+
+      回傳格式：{"score": 0 或 1, "explanation": "一句話說明"}
+
   - name: agent_turn_count
     custom_function: |
       def evaluate(instance):

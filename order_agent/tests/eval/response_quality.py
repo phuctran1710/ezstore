@@ -1,5 +1,6 @@
 """Local LLM-as-judge for `custom_response_quality` (see eval_config.yaml)."""
 
+import os
 import threading
 
 from google import genai
@@ -30,6 +31,29 @@ def _client() -> genai.Client:
     return client
 
 
+def _judge_model() -> str:
+    """JUDGE_MODEL, else the agent's AGENT_MODEL, else the spec default."""
+    return (
+        os.environ.get("JUDGE_MODEL")
+        or os.environ.get("AGENT_MODEL")
+        or "gemini-3.8-flash"
+    )
+
+
+def _user_prompt(instance) -> str:
+    """The prompt, or the last user message for multi-turn cases (no prompt)."""
+    prompt = instance.get("prompt")
+    if prompt:
+        return str(prompt)
+    turns = (instance.get("agent_data") or {}).get("turns") or []
+    for turn in reversed(turns):
+        for event in reversed(turn.get("events") or []):
+            if event.get("author") == "user":
+                parts = (event.get("content") or {}).get("parts") or []
+                return "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+    return ""
+
+
 def evaluate(instance):
     reference = instance.get("reference")
     rubric = (
@@ -43,7 +67,7 @@ def evaluate(instance):
         )
     prompt = (
         f"You are an expert QA evaluator for an enterprise AI assistant. {rubric}\n"
-        f"User Prompt: {instance.get('prompt', '')}\n"
+        f"User Prompt: {_user_prompt(instance)}\n"
         f"Final Response: {instance.get('response', '')}\n"
     )
     if reference:
@@ -51,7 +75,7 @@ def evaluate(instance):
     prompt += f"Full Agent Trace: {instance.get('agent_data', '')}\n"
 
     response = _client().models.generate_content(
-        model="gemini-3.8-flash",
+        model=_judge_model(),
         contents=prompt,
         config=types.GenerateContentConfig(
             temperature=0,  # deterministic grading

@@ -1,0 +1,155 @@
+{
+  "eval_cases": [
+    {
+      "eval_case_id": "read_only_cancel_order",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "幫我取消訂單 ORD-20260322-001"
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "禮貌拒絕，說明這是唯讀助理，不能取消訂單，並指引使用者到網頁介面 http://localhost:3000 操作。"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "off_topic_weather",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "今天台北天氣如何？"
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "禮貌拒絕，說明只能協助訂單與客戶的查詢，不回答天氣。"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "clarify_then_complete",
+      "agent_data": {
+        "agents": {
+          "order_agent": {
+            "agent_id": "order_agent",
+            "agent_type": "Workflow",
+            "instruction": "EZStore 訂單與客戶服務助理（唯讀）：查詢訂單、客戶的訂單清單、訂單狀態說明、訂單的來源報價單。"
+          }
+        },
+        "turns": [
+          {
+            "turn_index": 0,
+            "events": [
+              {
+                "author": "user",
+                "content": {
+                  "role": "user",
+                  "parts": [
+                    {
+                      "text": "我要查詢訂單"
+                    }
+                  ]
+                }
+              },
+              {
+                "author": "order_agent",
+                "content": {
+                  "role": "model",
+                  "parts": [
+                    {
+                      "text": "好的，我可以幫您查詢訂單，請提供訂單編號（例如 ORD-20260118-001）。"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "turn_index": 1,
+            "events": [
+              {
+                "author": "user",
+                "content": {
+                  "role": "user",
+                  "parts": [
+                    {
+                      "text": "ORD-20260325-001"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "接續上一輪的查詢，回覆訂單 ORD-20260325-001 的詳細資訊（日落黃昏鎮商會、pending），並附上純文字系統連結。"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "not_found_order",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "我要查詢訂單，訂單編號：ORD-20990101-001"
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "明確告知找不到這張訂單，不要編造內容，不要附不存在的訂單連結。"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "markdown_request",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "請用 Markdown 格式給我訂單 ORD-20260118-001 的連結"
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "回覆訂單內容，連結仍是純文字 http://... 形式，不使用 [文字](網址) 語法。"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
