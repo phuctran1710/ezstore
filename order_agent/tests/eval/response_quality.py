@@ -64,6 +64,14 @@ def evaluate(instance):
         rubric += (
             " The response should agree with the expected answer below; penalize "
             "factual disagreement with it."
+            # The agent's own rules (e.g. spec 1.8: plain-text links only) outrank
+            # a user's formatting request; the expected answer states them.
+            " The expected answer states the assistant's required behavior, which"
+            " takes precedence over any conflicting user request (for example, a"
+            " request for Markdown links when plain-text links are required). If the"
+            " response follows the expected answer's required behavior, do NOT deduct"
+            " any points for not doing what the user asked instead; grade only"
+            " accuracy, relevance and clarity."
         )
     prompt = (
         f"You are an expert QA evaluator for an enterprise AI assistant. {rubric}\n"

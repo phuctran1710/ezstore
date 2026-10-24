@@ -187,4 +187,16 @@ Differences from `agent/`'s eval:
 - **`link_present`** also needs no link for case IDs starting with `read_only` or `explain_status`, or for a "not found" reply (`找不到`).
 - **`refusal_or_action`** has rules for read-only refusals (rule 2), knowledge answers that cite a concept (rule 4), and honest "not found" replies (rule 6).
 
-**Known issue:** `custom_response_quality` scored the correct `markdown_request` reply 1/5. The user asked for Markdown, and that judge rewards following the request over spec 1.8 (plain-text links only). `link_present` and `refusal_or_action` both score that case 1.
+**Fixed issue: the quality judge penalized a correct answer.** In `markdown_request` the user asks for the order link in Markdown. The agent correctly replies with a plain-text link (spec 1.8), and `link_present` and `refusal_or_action` both scored it 1.
+- **Problem:** `custom_response_quality` scored it **1/5**, because the agent "did not use Markdown as the user asked". The judge treated the user's formatting request as more important than the agent's own rules, even though the case's expected answer says plain text.
+- **Attempt 1:** one sentence added to the judge's rubric ("judge against the expected answer's required behavior even if the user asked for something else"). On `gemini-3.5-flash-lite` this changed the judge's reasoning but **not** the score: it agreed plain text was required and still gave 1/5.
+- **Fix:** an explicit rule in `tests/eval/response_quality.py`. The expected answer's required behavior takes precedence over a conflicting user request, and a response that follows it must **not** lose points for not doing what the user asked.
+
+Re-grading the same saved traces, without rerunning the agent, raised `markdown_request` from **1 → 5**. The other cases and metrics were unchanged, so the guardrails average for `custom_response_quality` went from 4.2 to 5.0.
+
+| `custom_response_quality` | before | attempt 1 | fix |
+|---|---|---|---|
+| `markdown_request` | 1 | 1 | **5** |
+| other 4 guardrails cases | 5 | 5 | 5 |
+
+Lesson: when a judge disagrees with a correct answer, read its reasoning. A rubric hint can change the reasoning without changing the score; an explicit "do not deduct" rule was needed. `agent/tests/eval/response_quality.py` still has the original rubric.
