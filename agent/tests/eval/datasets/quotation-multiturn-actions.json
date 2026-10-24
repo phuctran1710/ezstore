@@ -1,0 +1,32 @@
+{
+  "eval_cases": [
+    {
+      "eval_case_id": "clarify_then_update_pricing_factor",
+      "agent_data": {
+        "agents": {
+          "quotation_agent": {
+            "agent_id": "quotation_agent",
+            "agent_type": "Workflow",
+            "instruction": "EZStore 報價單管理助理：查詢、複製、修改報價因子／總價、轉訂單。"
+          }
+        },
+        "turns": [
+          {
+            "turn_index": 0,
+            "events": [
+              {"author": "user", "content": {"role": "user", "parts": [{"text": "我要修改報價因子，報價單編號：QT-20260330-001"}]}},
+              {"author": "quotation_agent", "content": {"role": "model", "parts": [{"text": "好的，我可以幫您修改報價單報價因子，請提供新的報價因子（例如 1.5）。"}]}}
+            ]
+          },
+          {
+            "turn_index": 1,
+            "events": [
+              {"author": "user", "content": {"role": "user", "parts": [{"text": "0.8"}]}}
+            ]
+          }
+        ]
+      },
+      "reference": {"response": {"role": "model", "parts": [{"text": "完成修改，回覆新報價單連結並說明原始報價單未修改"}]}}
+    }
+  ]
+}

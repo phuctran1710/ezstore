@@ -146,7 +146,7 @@ services:
 
 ## Running the eval
 
-Two datasets in `tests/eval/datasets/` (`quotation-actions.json` with the 6 operations; `quotation-guardrails.json` with 2 off-topic refusals plus a multi-turn clarification) are scored on four metrics from `tests/eval/eval_config.yaml`: `custom_response_quality`, `link_present`, `refusal_or_action` and `agent_turn_count`.
+Three datasets in `tests/eval/datasets/` (`quotation-actions.json` with the 6 operations; `quotation-guardrails.json` with 2 off-topic refusals, a multi-turn clarification and a not-found lookup; `quotation-multiturn-actions.json` with a 2-turn pricing-factor change, which changes data, so reseed before and after) are scored on four metrics from `tests/eval/eval_config.yaml`: `custom_response_quality`, `link_present`, `refusal_or_action` and `agent_turn_count`.
 
 ```bash
 gcloud auth application-default login   # once: agents-cli's grader needs gcloud credentials (no billing needed)

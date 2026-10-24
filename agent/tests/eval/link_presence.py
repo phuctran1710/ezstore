@@ -2,7 +2,9 @@
 
 1. A Markdown link [text](url) → 0 (spec 1.8 requires plain-text links).
 2. eval_case_id starting with "off_topic" → 1, a refusal needs no link.
-3. Otherwise the reply must contain a plain http(s)://.../quotations/<id> or
+3. A reply containing 找不到 → 1, a not-found answer has no record to link to
+   (eval-lab.md section 5).
+4. Otherwise the reply must contain a plain http(s)://.../quotations/<id> or
    .../orders/<id> link → 1, else 0.
 """
 
@@ -31,6 +33,8 @@ def evaluate(instance):
         }
     if case_id.startswith("off_topic"):
         return {"score": 1, "explanation": "Off-topic refusal needs no link"}
+    if "找不到" in text:
+        return {"score": 1, "explanation": "查無資料的回覆不需要明細連結"}
     if _LINK.search(text):
         return {"score": 1, "explanation": "Plain-text system link present"}
     return {
