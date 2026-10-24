@@ -87,6 +87,52 @@ WRITE_RE = re.compile(
     r"|\b(cancel|delete|remove|update|change|modify|create|add|edit)\b[^.?!\n]{0,40}\b(orders?|customers?|products?)\b",
     re.IGNORECASE,
 )
+# A request that names an operation (with or without its fields) is that
+# operation, even if the LLM calls it "unclear"; missing fields then go to
+# clarify for that operation. Checked in order: the most specific first.
+OPERATION_CUES: list[tuple[str, re.Pattern[str]]] = [
+    (
+        "order_quotation",
+        re.compile(
+            r"訂單.{0,30}(報價單|報價).{0,6}(來|來源)|(來源|原始)報價單"
+            r"|\b(source|original)\s+quotation\b|\bwhich\s+quotation\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "list_customer_orders",
+        re.compile(
+            r"客戶.{0,10}訂單|訂單(清單|列表)"
+            r"|\bcustomer'?s?\s+orders\b|\borders?\s+(of|for)\s+(a\s+|the\s+)?customer\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "explain_status",
+        re.compile(
+            r"狀態.{0,15}(意思|代表|說明|是什麼|是甚麼)"
+            r"|\bstatus(es)?\b.{0,30}\b(mean|meaning)\b|\bwhat\s+does\b.{0,40}\bmean\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "get_order",
+        re.compile(
+            r"(查詢|查|看|找|調閱).{0,4}訂單|訂單.{0,4}(資訊|資料|明細|內容|狀態)"
+            r"|\b(look\s*up|show|find|check|get)\b.{0,20}\border\b",
+            re.IGNORECASE,
+        ),
+    ),
+]
+
+
+def _named_operation(message: str) -> str | None:
+    for intent, pattern in OPERATION_CUES:
+        if pattern.search(message):
+            return intent
+    return None
+
+
 TOOL_ERROR_PREFIX_RE = re.compile(r"^Error executing tool \w+:\s*")
 MARKDOWN_LINK_RE = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)")
 CANDIDATE_LINE_RE = re.compile(r"^\s*(\d+)\.\s*(.+?)\s*$", re.M)
@@ -430,6 +476,8 @@ def route(ctx: Context, node_input: Intent) -> Event:
         elif intent == "unclear" and pending.get("missing") == ["customer_name"]:
             fields["customer_name"] = message.strip(" ，,。？?")
             intent = pending["intent"]
+    if intent in ("unclear", "off_topic") and (named := _named_operation(message)):
+        intent = named
     if intent == "unclear" and not DOMAIN_RE.search(message):
         intent = "off_topic"
 

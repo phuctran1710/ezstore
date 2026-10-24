@@ -127,3 +127,56 @@ def test_respond_strips_markdown_links():
         _ctx("hi"), Reply(text="請看 [訂單](http://localhost:3000/orders/1)")
     )
     assert event.output == "請看 訂單 http://localhost:3000/orders/1"
+
+
+@pytest.mark.parametrize("llm_intent", ["unclear", "off_topic"])
+@pytest.mark.parametrize(
+    ("message", "operation", "missing", "answer", "args"),
+    [
+        ("我要查詢訂單", "get_order", "order_number", ORD, {"order_number": ORD}),
+        ("Look up an order", "get_order", "order_number", ORD, {"order_number": ORD}),
+        (
+            "我要查詢客戶的訂單清單",
+            "list_customer_orders",
+            "customer_name",
+            "客戶名稱：史塔克工業",
+            {"customer_name": "史塔克工業"},
+        ),
+        (
+            "訂單狀態是什麼意思？",
+            "explain_status",
+            "status",
+            "pending",
+            {"status": "pending"},
+        ),
+        (
+            "訂單是從哪張報價單來的？",
+            "order_quotation",
+            "order_number",
+            ORD,
+            {"order_number": ORD},
+        ),
+    ],
+)
+def test_named_operation_without_fields_asks_then_completes(
+    llm_intent, message, operation, missing, answer, args
+):
+    # The LLM did not recognize the operation; code does, and asks for the field.
+    next_node, output = _route(message, intent=llm_intent)
+    assert next_node == "clarify"
+    assert output == {"intent": operation, "missing": [missing], "fields": {}}
+    reply = Reply(**clarify(output))
+    assert reply.text.startswith(
+        f"好的，我可以幫您{prompts.OPERATION_LABELS[operation]}，請提供"
+    )
+    assert reply.pending_intent == output
+
+    # The next message only supplies the field; the operation continues.
+    next_node, output = _route(answer, pending=reply.pending_intent, intent="unclear")
+    assert next_node == operation
+    assert output["args"] == args
+
+
+def test_named_operation_does_not_override_a_write_request():
+    next_node, _ = _route("我要查詢訂單然後取消訂單", intent="unclear")
+    assert next_node == "read_only"
