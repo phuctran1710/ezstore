@@ -43,6 +43,10 @@ ezstore/
 │   ├── pyproject.toml           # google-adk[mcp,a2a]>=2.10,<3（+ uv.lock）
 │   ├── quotation_agent/         # agent.py（Workflow 圖）、prompts.py、fast_api_app.py
 │   └── tests/                   # unit/、integration/、eval/（agents-cli eval 題庫與指標）
+├── order_agent/                # 唯讀訂單與客戶服務 Agent（A2A → 報價單 Agent）
+│   ├── order_agent/             # agent.py（Workflow 圖）、knowledge.py、a2a_client.py、prompts.py
+│   └── knowledge/               # OKF 知識庫（訂單狀態、流程、ADR、教訓）
+├── order_mcp_server/           # 唯讀 MCP Server（3 個訂單／客戶工具）
 ├── mcp_server/
 │   ├── Dockerfile
 │   ├── pyproject.toml           # mcp>=2.2、httpx（含 uv.lock）
@@ -172,6 +176,7 @@ docker compose exec db psql -U ezstore -f /scripts/seed-test-data.sql
 | Swagger UI | http://localhost:8080/swagger/index.html |
 | 健康檢查 | http://localhost:8080/health |
 | AI 助理對話 | http://localhost:3000/agent |
+| 訂單助理（ADK dev UI） | http://localhost:8502/dev-ui/ |
 
 **執行 E2E 測試（驗證部署是否正常）：**
 
@@ -350,6 +355,34 @@ python3 ../scripts/eval_summary.py artifacts/grade_results/results_<時間>.json
 
 學員用的可信賴度評鑑 LAB：課堂版 [eval-lab-quick.zh-TW.md](eval-lab-quick.zh-TW.md)（25 分鐘）、完整版 [eval-lab.zh-TW.md](eval-lab.zh-TW.md)（60–90 分鐘，回家做）。
 
+### 訂單與客戶服務助理（A2A）
+
+第二個 Agent 位於 `order_agent/`，是 **唯讀** 助理（規格：[agent2-spec-prompt.md](agent2-spec-prompt.md)）。它採用與報價單助理相同的 Graph Workflow 模式，只有意圖分類節點呼叫 LLM。它可以：
+- 查詢訂單；
+- 查詢客戶的訂單清單；
+- 依 **OKF 知識庫**（`order_agent/knowledge/`）說明訂單狀態，並註明 `來源：glossary/order-status-…`；
+- 透過 **A2A** 詢問報價單助理，查出訂單的來源報價單。只送出由程式組成的查詢句，也只採用報價單助理 `respond` 節點的文字。
+
+新增、取消、修改、刪除資料的請求一律由程式拒答。訂單資料來自獨立的唯讀 MCP Server `order_mcp_server/`。
+
+```
+使用者 → order_agent（ADK dev UI :8502）─MCP→ order_mcp_server（:8011）→ Backend REST API
+                    │
+                    └─A2A→ quotation_agent（agent:8080/a2a/quotation_agent；本機 127.0.0.1:8081）→ mcp_server → Backend
+```
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build   # 包含 order-mcp-server 與 order-agent
+# 展示：http://localhost:8502/dev-ui/ → order_agent →「訂單 ORD-20260118-001 是從哪張報價單來的？」
+
+cd order_agent && cp .env.example .env && uv sync --group dev --extra eval
+agents-cli playground --port 8503     # 本機 playground（8502 是 Docker 的 order-agent）
+uv run pytest tests -q                # 不呼叫模型
+agents-cli eval run --dataset tests/eval/datasets/order-guardrails.json --qps 0.2
+```
+
+圖的設計、知識庫（以及如何新增概念）、A2A 流程與評估：見 [order_agent/README.md](order_agent/README.md)（英文）。
+
 ### 授權
 
 本專案採用 [MIT License](LICENSE) 開源授權。
@@ -366,7 +399,7 @@ python3 ../scripts/eval_summary.py artifacts/grade_results/results_<時間>.json
 - **用途：** B2B 報價與訂單管理系統
 - **語言：** Go（後端）、TypeScript/React（前端）、Python 3.12（Agent + MCP Server）
 - **資料庫：** PostgreSQL 16
-- **部署：** Docker Compose（5 個服務：db、backend、frontend、agent、mcp-server）
+- **部署：** Docker Compose（7 個服務：db、backend、frontend、agent、mcp-server、order-agent、order-mcp-server）
 
 ### 架構模式
 

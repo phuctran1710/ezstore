@@ -43,6 +43,10 @@ ezstore/
 │   ├── pyproject.toml           # google-adk[mcp,a2a]>=2.10,<3 (+ uv.lock)
 │   ├── quotation_agent/         # agent.py (Workflow graph), prompts.py, fast_api_app.py
 │   └── tests/                   # unit/, integration/, eval/ (agents-cli eval datasets + metrics)
+├── order_agent/                # Read-only order & customer service agent (A2A → quotation agent)
+│   ├── order_agent/             # agent.py (Workflow graph), knowledge.py, a2a_client.py, prompts.py
+│   └── knowledge/               # OKF knowledge bundle (order statuses, playbook, ADRs, lessons)
+├── order_mcp_server/           # Read-only MCP Server (3 order/customer tools)
 ├── mcp_server/
 │   ├── Dockerfile
 │   ├── pyproject.toml           # mcp>=2.2, httpx (+ uv.lock)
@@ -172,6 +176,7 @@ docker compose exec db psql -U ezstore -f /scripts/seed-test-data.sql
 | Swagger UI | http://localhost:8080/swagger/index.html |
 | Health Check | http://localhost:8080/health |
 | AI Agent Chat | http://localhost:3000/agent |
+| Order Agent (ADK dev UI) | http://localhost:8502/dev-ui/ |
 
 **Run E2E tests (verify the deployment is working):**
 
@@ -350,6 +355,34 @@ Notes on the eval:
 
 Trustworthiness evaluation labs for learners: [eval-lab-quick.md](eval-lab-quick.md) (25 min, in class) and [eval-lab.md](eval-lab.md) (60–90 min, full version).
 
+### Order & Customer Service Agent (A2A)
+
+A second, **read-only** agent in `order_agent/` (spec: [agent2-spec-prompt.md](agent2-spec-prompt.md)). It uses the same graph Workflow pattern as the quotation agent, with only the intent classifier calling the LLM. It can:
+- look up an order;
+- list a customer's orders;
+- explain an order status from an **OKF knowledge bundle** (`order_agent/knowledge/`, cited as `來源：glossary/order-status-…`);
+- tell which quotation an order came from, by asking the quotation agent over **A2A**. Only lookup sentences built by code are sent, and only the quotation agent's `respond` text is used.
+
+Requests to create, cancel, change or delete data are refused in code. Order data comes from a separate read-only MCP server in `order_mcp_server/`.
+
+```
+User → order_agent (ADK dev UI :8502) ─MCP→ order_mcp_server (:8011) → Backend REST API
+                    │
+                    └─A2A→ quotation_agent (agent:8080/a2a/quotation_agent; host 127.0.0.1:8081) → mcp_server → Backend
+```
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build   # includes order-mcp-server and order-agent
+# demo: http://localhost:8502/dev-ui/ → order_agent → 「訂單 ORD-20260118-001 是從哪張報價單來的？」
+
+cd order_agent && cp .env.example .env && uv sync --group dev --extra eval
+agents-cli playground --port 8503     # local playground (8502 is the Docker order-agent)
+uv run pytest tests -q                # no model calls
+agents-cli eval run --dataset tests/eval/datasets/order-guardrails.json --qps 0.2
+```
+
+Graph, knowledge bundle (and how to add a concept), the A2A sequence and the eval: [order_agent/README.md](order_agent/README.md).
+
 ### License
 
 This project is licensed under the [MIT License](LICENSE).
@@ -366,7 +399,7 @@ This project is licensed under the [MIT License](LICENSE).
 - **Purpose:** B2B quotation and order management system
 - **Language:** Go (backend), TypeScript/React (frontend), Python 3.12 (agent + MCP server)
 - **Database:** PostgreSQL 16
-- **Deployment:** Docker Compose (5 services: db, backend, frontend, agent, mcp-server)
+- **Deployment:** Docker Compose (7 services: db, backend, frontend, agent, mcp-server, order-agent, order-mcp-server)
 
 ### Architecture Pattern
 
