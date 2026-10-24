@@ -14,6 +14,16 @@ services:
     pull_policy: never
     build: ./agent
 
+  order-mcp-server:
+    image: ezstore-order-mcp-server:local
+    pull_policy: never
+    build: ./order_mcp_server
+
+  order-agent:
+    image: ezstore-order-agent:local
+    pull_policy: never
+    build: ./order_agent
+
   frontend:
     image: ezstore-frontend:local
     pull_policy: never

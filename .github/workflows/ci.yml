@@ -31,6 +31,12 @@ jobs:
           - component: agent
             context: ./agent
             dockerfile: ./agent/Dockerfile
+          - component: order-mcp-server
+            context: ./order_mcp_server
+            dockerfile: ./order_mcp_server/Dockerfile
+          - component: order-agent
+            context: ./order_agent
+            dockerfile: ./order_agent/Dockerfile
           - component: e2e
             context: ./frontend
             dockerfile: ./frontend/e2e/Dockerfile

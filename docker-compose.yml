@@ -71,6 +71,42 @@ services:
     depends_on:
       - mcp-server
 
+  order-mcp-server:
+    image: ghcr.io/cshliu77/ezstore/order-mcp-server:latest
+    pull_policy: always
+    environment:
+      BACKEND_URL: http://backend:8080
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+    ports:
+      # 讓本機執行的 order_agent（agents-cli playground / eval）也能連到訂單 MCP Server
+      - "${ORDER_MCP_HOST_PORT:-8011}:8000"
+    depends_on:
+      backend:
+        condition: service_started
+
+  order-agent:
+    image: ghcr.io/cshliu77/ezstore/order-agent:latest
+    pull_policy: always
+    environment:
+      # 與 agent 共用模型憑證；沒設定時服務照常啟動，對話會回傳清楚的錯誤訊息
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
+      AGENT_MODEL: ${AGENT_MODEL:-gemini-3.8-flash}
+      MCP_URL: http://order-mcp-server:8000/mcp
+      # 報價單問題透過 A2A 交給報價單 Agent（Compose 內部網路）
+      QUOTATION_AGENT_URL: http://agent:8080/a2a/quotation_agent
+      # 本服務 A2A agent card 對外公告的位址
+      APP_URL: http://order-agent:8080
+      ALLOW_ORIGINS: ${ALLOW_ORIGINS:-http://localhost:3000}
+    ports:
+      # ADK dev UI（展示用）：http://localhost:8502/dev-ui/
+      - "${ORDER_AGENT_HOST_PORT:-8502}:8080"
+    depends_on:
+      - order-mcp-server
+      - agent
+
   frontend:
     image: ghcr.io/cshliu77/ezstore/frontend:latest
     pull_policy: always

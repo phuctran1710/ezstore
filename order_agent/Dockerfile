@@ -8,6 +8,8 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY order_agent ./order_agent
+# OKF knowledge bundle; order_agent/knowledge.py reads it from /code/knowledge
+COPY knowledge ./knowledge
 
 ARG AGENT_VERSION=0.0.0
 ENV AGENT_VERSION=${AGENT_VERSION} \
